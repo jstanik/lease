@@ -32,8 +32,4 @@ interface Lease {
      */
     val holderName: String
 
-    /**
-     * Releases this lease. This function blocks until this lease is released.
-     */
-    fun release()
 }
