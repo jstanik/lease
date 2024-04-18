@@ -26,6 +26,18 @@ interface LeaseRepository {
     ): Lease
 
     /**
+     * Acquires a lease if possible. A lease can be acquired if there is no such a lease in the
+     * repository or if the existing lease is expired.
+     *
+     * @throws LeaseAcquiringFailed when the lease acquiring failed
+     */
+    fun acquireLease(
+        leaseName: String,
+        owner: String,
+        timeout: Long = 60_000,
+    ): Lease
+
+    /**
      * Renews the lease.
      *
      * @param lease the lease to renew

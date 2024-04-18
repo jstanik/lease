@@ -8,6 +8,7 @@ import com.zaxxer.hikari.HikariDataSource
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import sk.bakeit.lease.api.LeaseAcquiringFailed
 import sk.bakeit.lease.api.LeaseAlreadyExists
 import sk.bakeit.lease.api.LeaseNotFound
 import java.time.Instant
@@ -61,6 +62,59 @@ class PostgresqlLeaseRepositoryTest {
         assertThrows<LeaseAlreadyExists> {
             cut.createLease(name, "irrelevant 2")
         }
+    }
+
+    @Test
+    fun `acquireLease with unique name`() {
+        val name = "acquireLease-unique"
+        val holderName = "createLease-holder"
+        val timeout = 30000L
+        val before = Instant.now().truncatedTo(MILLIS)
+
+        val actual = cut.acquireLease(name, holderName, timeout) as PersistentLease
+
+        val after = Instant.now().truncatedTo(MILLIS)
+
+        assertThat(actual.name).isEqualTo(name)
+        assertThat(actual.version).isEqualTo(1)
+        assertThat(actual.holderName).isEqualTo(holderName)
+        assertThat(actual.timeout).isEqualTo(timeout)
+        assertThat(actual.acquiredAt.truncatedTo(MILLIS)).isIn(range(before, CLOSED, after, CLOSED))
+        assertThat(actual.renewedAt.truncatedTo(MILLIS)).isIn(range(before, CLOSED, after, CLOSED))
+    }
+
+    @Test
+    fun `acquireLease fails when valid lease exists`() {
+        val name = "acquireLease-failes-when-valid-exists"
+        val holderName = "createLease-holder"
+        val timeout = 30000L
+        cut.acquireLease(name, holderName, timeout)
+
+        assertThrows<LeaseAcquiringFailed> {
+            cut.acquireLease(name, "irrelevant")
+        }
+    }
+
+    @Test
+    fun `acquireLease steal existing lease when it is expired`() {
+        val name = "acquireLease-steal"
+        val holderName = "createLease-holder"
+        val timeout = 1L
+
+        val expired = cut.acquireLease(name, holderName, timeout) as PersistentLease
+        Thread.sleep(2)
+
+        val before = Instant.now().truncatedTo(MILLIS)
+        val actual = cut.acquireLease(name, "thief", 100L) as PersistentLease
+        val after = Instant.now().truncatedTo(MILLIS)
+
+        assertThat(actual.version).isEqualTo(expired.version + 1)
+        assertThat(actual.name).isEqualTo(expired.name)
+        assertThat(actual.acquiredAt).isEqualTo(expired.acquiredAt)
+        assertThat(actual.renewedAt).isNotEqualTo(expired.renewedAt)
+        assertThat(actual.renewedAt.truncatedTo(MILLIS)).isIn(range(before, CLOSED, after, CLOSED))
+        assertThat(actual.timeout).isEqualTo(100L)
+        assertThat(actual.holderName).isEqualTo("thief")
     }
 
     @Test

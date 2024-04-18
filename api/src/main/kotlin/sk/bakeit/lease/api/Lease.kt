@@ -32,4 +32,11 @@ interface Lease {
      */
     val holderName: String
 
+    /**
+     * Indicates if the lease is expired at the specific point in time.
+     */
+    fun isExpiredAt(instant: Instant): Boolean {
+        return instant.isAfter(renewedAt.plusMillis(timeout))
+    }
+
 }
