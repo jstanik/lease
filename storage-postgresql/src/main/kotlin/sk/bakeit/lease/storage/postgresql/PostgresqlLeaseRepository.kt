@@ -7,7 +7,8 @@ import sk.bakeit.lease.api.LeaseAcquiringFailed
 import sk.bakeit.lease.api.LeaseAlreadyExists
 import sk.bakeit.lease.api.LeaseNotFound
 import sk.bakeit.lease.api.LeaseRepository
-import sk.bakeit.lease.storage.postgresql.tx.Transaction
+import sk.bakeit.lease.storage.postgresql.jdbc.StaleData
+import sk.bakeit.lease.storage.postgresql.jdbc.Transaction
 import java.sql.Connection
 import java.sql.ResultSet
 import java.sql.Timestamp
@@ -113,7 +114,7 @@ class PostgresqlLeaseRepository(
 
                 statement.execute()
                 statement.resultSet.toAtMostOneLease()
-                    ?: throw LeaseAcquiringFailed("A valid lease '$leaseName already exists.'")
+                    ?: throw LeaseAcquiringFailed("A valid lease '$leaseName' already exists.")
             }
         }
     }
@@ -147,7 +148,10 @@ class PostgresqlLeaseRepository(
                 it.setLong(++index, lease.version)
 
                 it.execute()
-                it.resultSet.toAtMostOneLease() ?: throw LeaseNotFound(lease.name)
+                it.resultSet.toAtMostOneLease() ?: run {
+                    detectStaleData(lease.name, lease.version, connection)
+                    throw LeaseNotFound(lease.name)
+                }
             }
         }
     }
@@ -180,6 +184,26 @@ class PostgresqlLeaseRepository(
             throw ex
         } finally {
             transaction.endTransaction()
+        }
+    }
+
+    private fun detectStaleData(leaseName: String, expectedVersion: Long, connection: Connection) {
+        val statement =  connection.prepareStatement(
+                "SELECT $COLUMN_VERSION FROM $TABLE_LEASE WHERE $COLUMN_NAME = ?"
+            )
+        statement.use {
+            statement.setString(1, leaseName)
+            val resultSet = it.executeQuery()
+
+            if (resultSet.next()) {
+                val actualVersion = resultSet.getLong(1)
+
+                if (actualVersion != expectedVersion) {
+                    throw StaleData("Stale data detected for the lease '$leaseName'." +
+                            " Stale version $expectedVersion presented" +
+                            " but actual version was $actualVersion.")
+                }
+            }
         }
     }
 

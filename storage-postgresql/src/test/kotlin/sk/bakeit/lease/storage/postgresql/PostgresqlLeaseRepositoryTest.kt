@@ -11,6 +11,7 @@ import org.junit.jupiter.api.assertThrows
 import sk.bakeit.lease.api.LeaseAcquiringFailed
 import sk.bakeit.lease.api.LeaseAlreadyExists
 import sk.bakeit.lease.api.LeaseNotFound
+import sk.bakeit.lease.storage.postgresql.jdbc.StaleData
 import java.time.Instant
 import java.time.temporal.ChronoUnit.MILLIS
 
@@ -150,6 +151,20 @@ class PostgresqlLeaseRepositoryTest {
         )
 
         assertThrows<LeaseNotFound> { cut.renewLease(lease) }
+    }
+
+    @Test
+    fun `renewLease stale data detected`() {
+        val name = "renewLease-stale-data-detected"
+        val holderName = "renewLease-holder"
+
+        val createdLease = cut.createLease(name, holderName) as PersistentLease
+
+        cut.renewLease(createdLease)
+
+        assertThrows<StaleData> {
+            cut.renewLease(createdLease)
+        }
     }
 
     @Test

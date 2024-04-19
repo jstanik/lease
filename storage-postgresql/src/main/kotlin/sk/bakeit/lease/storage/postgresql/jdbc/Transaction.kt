@@ -1,4 +1,4 @@
-package sk.bakeit.lease.storage.postgresql.tx
+package sk.bakeit.lease.storage.postgresql.jdbc
 
 import java.sql.Connection
 
