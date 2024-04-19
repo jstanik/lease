@@ -1,17 +1,21 @@
 [versions]
-junit-jupiter = "5.10.2"
+google-truth = "1.4.2"
+hikari-cp = "5.1.0"
 jdbc-driver-postgresql = "42.7.3"
-testcontainers-postgresql="1.19.3"
-google-truth="1.4.2"
-hikari-cp="5.1.0"
-kotlin-version="1.9.23"
+junit-jupiter = "5.10.2"
+kotlin-version = "1.9.23"
+mockito-junit-jupiter = "5.11.0"
+mockito-kotlin = "5.3.1"
+testcontainers-postgresql = "1.19.7"
 
 [libraries]
-junit-jupiter = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "junit-jupiter" }
+google-truth = { module = "com.google.truth:truth", version.ref = "google-truth" }
+hikari-cp = { module = "com.zaxxer:HikariCP", version.ref = "hikari-cp" }
 jdbc-driver-postgresql = { module = "org.postgresql:postgresql", version.ref = "jdbc-driver-postgresql" }
-testcontainers-postgresql = { module = "org.testcontainers:postgresql", version.ref = "testcontainers-postgresql"}
-google-truth = { module = "com.google.truth:truth", version.ref = "google-truth"}
-hikari-cp = {module = "com.zaxxer:HikariCP", version.ref = "hikari-cp"}
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "junit-jupiter" }
+mockito-junit-jupiter = { module = "org.mockito:mockito-junit-jupiter", version.ref = "mockito-junit-jupiter" }
+mockito-kotlin = { module = "org.mockito.kotlin:mockito-kotlin", version.ref = "mockito-kotlin" }
+testcontainers-postgresql = { module = "org.testcontainers:postgresql", version.ref = "testcontainers-postgresql" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin-version" }
