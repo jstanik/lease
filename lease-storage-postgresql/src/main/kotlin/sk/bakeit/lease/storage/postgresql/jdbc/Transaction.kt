@@ -20,6 +20,10 @@ internal class Transaction(
                 currentTransaction.set(newTx)
             }
         }
+
+        internal fun removeCurrentTransaction() {
+            currentTransaction.remove()
+        }
     }
 
     private var rollbackOnly: Boolean = false

@@ -1,6 +1,7 @@
 package sk.bakeit.lease.storage.postgresql.jdbc
 
 import com.google.common.truth.Truth.assertThat
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.Mock
@@ -9,16 +10,18 @@ import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import java.sql.Connection
+import java.util.concurrent.atomic.AtomicReference
 
 @ExtendWith(MockitoExtension::class)
 class TransactionTest {
 
-    // These tests incur a memory leak due to not cleaning up a ThreadLocal variable
-    // inside Transaction class. Introducing cleanup code would decrease the readability
-    // of the code and hide the test purpose.
-
     @Mock
     lateinit var connection: Connection
+
+    @AfterEach
+    fun afterEach() {
+        Transaction.removeCurrentTransaction()
+    }
 
     @Test
     fun `getCurrentTransaction called twice from the same thread returns same instance`() {
@@ -26,6 +29,22 @@ class TransactionTest {
         val actual2 = Transaction.getCurrentTransaction { connection }
 
         assertThat(actual2).isSameInstanceAs(actual1)
+    }
+
+    @Test
+    fun `getCurrentTransaction called twice from the different threads returns different instances`() {
+        val ref1 = AtomicReference<Transaction>()
+        val ref2 = AtomicReference<Transaction>()
+        Thread {
+            ref1.set(Transaction.getCurrentTransaction { connection })
+            Transaction.removeCurrentTransaction()
+        }.start()
+        Thread({
+            ref2.set(Transaction.getCurrentTransaction { connection })
+            Transaction.removeCurrentTransaction()
+        }).start()
+
+        assertThat(ref1.get()).isNotSameInstanceAs(ref2.get())
     }
 
     @Test
@@ -50,7 +69,7 @@ class TransactionTest {
         cut.beginTransaction()
         verify(connection, times(1)).autoCommit = false
         verify(connection, times(1)).transactionIsolation = Connection.TRANSACTION_READ_COMMITTED
-        
+
         cut.endTransaction()
 
         verify(connection, times(1)).autoCommit = true
