@@ -1,13 +1,10 @@
 package sk.bakeit.lease.storage.postgresql
 
-import org.postgresql.util.PSQLException
-import org.postgresql.util.PSQLState
 import sk.bakeit.lease.api.Lease
 import sk.bakeit.lease.api.LeaseAcquiringFailed
-import sk.bakeit.lease.api.LeaseAlreadyExists
 import sk.bakeit.lease.api.LeaseNotFound
 import sk.bakeit.lease.api.LeaseRepository
-import sk.bakeit.lease.storage.postgresql.jdbc.StaleData
+import sk.bakeit.lease.api.StaleLease
 import sk.bakeit.lease.storage.postgresql.jdbc.Transaction
 import java.sql.Connection
 import java.sql.ResultSet
@@ -16,11 +13,14 @@ import java.time.Instant
 import javax.sql.DataSource
 
 /**
+ *
+ * Private API. It should not be used directly by the client code.
+ *
  * This implementation of the `LeaseRepository` uses Postgresql database to manage leases.
  *
  * @param dataSource the datasource providing connection to the postgresql database.
  */
-class PostgresqlLeaseRepository(
+internal class PostgresqlLeaseRepository(
     private val dataSource: DataSource,
 ) : LeaseRepository {
 
@@ -46,40 +46,7 @@ class PostgresqlLeaseRepository(
 
             statement.use {
                 it.setString(1, leaseName)
-                it.executeQuery().toAtMostOneLease()
-            }
-        }
-    }
-
-    override fun createLease(leaseName: String, owner: String, timeout: Long): Lease {
-        return doInTransaction { connection ->
-            val statement = connection.prepareStatement(
-                """INSERT INTO $TABLE_LEASE($FULL_COLUMN_LIST)
-                   VALUES(?, 1, ?, ?, ?, ?, ?)
-                   RETURNING $FULL_COLUMN_LIST
-                """.trimIndent()
-            )
-
-            val instant = Instant.now()
-            statement.use {
-                it.setString(1, leaseName)
-                it.setTimestamp(2, Timestamp.from(instant))
-                it.setTimestamp(3, Timestamp.from(instant))
-                it.setLong(4, timeout)
-                it.setString(5, owner)
-                it.setTimestamp(6, Timestamp.from(instant.plusMillis(timeout)))
-
-                try {
-                    statement.execute()
-                    statement.resultSet.toAtMostOneLease()
-                        ?: throw IllegalStateException("INSERT statement didn't return the inserted value.")
-                } catch (error: PSQLException) {
-                    if (error.sqlState == PSQLState.UNIQUE_VIOLATION.state) {
-                        throw LeaseAlreadyExists(leaseName)
-                    } else {
-                        throw error
-                    }
-                }
+                toAtMostOneLease(it.executeQuery())
             }
         }
     }
@@ -113,17 +80,17 @@ class PostgresqlLeaseRepository(
                 it.setTimestamp(++index, Timestamp.from(instant))
 
                 statement.execute()
-                statement.resultSet.toAtMostOneLease()
+                toAtMostOneLease(statement.resultSet)
                     ?: throw LeaseAcquiringFailed("A valid lease '$leaseName' already exists.")
             }
         }
     }
 
-    override fun renewLease(lease: Lease): Lease {
-        if (lease !is PersistentLease) {
+    internal fun renewLease(lease: Lease): Lease {
+        if (lease !is PostgresqlLease) {
             throw IllegalArgumentException(
                 "Unsupported Lease implementation - ${lease.javaClass}." +
-                        " ${PersistentLease::class.qualifiedName} expected."
+                        " ${PostgresqlLease::class.qualifiedName} expected."
             )
         }
 
@@ -148,7 +115,7 @@ class PostgresqlLeaseRepository(
                 it.setLong(++index, lease.version)
 
                 it.execute()
-                it.resultSet.toAtMostOneLease() ?: run {
+                toAtMostOneLease(it.resultSet) ?: run {
                     detectStaleData(lease.name, lease.version, connection)
                     throw LeaseNotFound(lease.name)
                 }
@@ -199,7 +166,8 @@ class PostgresqlLeaseRepository(
                 val actualVersion = resultSet.getLong(1)
 
                 if (actualVersion != expectedVersion) {
-                    throw StaleData("Stale data detected for the lease '$leaseName'." +
+                    throw StaleLease(
+                        "Stale data detected for the lease '$leaseName'." +
                             " Stale version $expectedVersion presented" +
                             " but actual version was $actualVersion.")
                 }
@@ -207,24 +175,24 @@ class PostgresqlLeaseRepository(
         }
     }
 
-    private fun ResultSet.toAtMostOneLease(): PersistentLease? {
-        val isEmpty = !next()
+    private fun toAtMostOneLease(resultSet: ResultSet): PostgresqlLease? {
+        val isEmpty = !resultSet.next()
 
         return if (isEmpty) {
             null
         } else {
-            val name = getString(COLUMN_NAME)
-            val version = getLong(COLUMN_VERSION)
-            val acquiredAt = getTimestamp(COLUMN_ACQUIRED_AT).toInstant()
-            val renewedAt = getTimestamp(COLUMN_RENEWED_AT).toInstant()
-            val timeout = getLong(COLUMN_TIMEOUT)
-            val holderName = getString(COLUMN_HOLDER_NAME)
+            val name = resultSet.getString(COLUMN_NAME)
+            val version = resultSet.getLong(COLUMN_VERSION)
+            val acquiredAt = resultSet.getTimestamp(COLUMN_ACQUIRED_AT).toInstant()
+            val renewedAt = resultSet.getTimestamp(COLUMN_RENEWED_AT).toInstant()
+            val timeout = resultSet.getLong(COLUMN_TIMEOUT)
+            val holderName = resultSet.getString(COLUMN_HOLDER_NAME)
 
-            if (next()) {
+            if (resultSet.next()) {
                 throw IllegalStateException("More than one lease found for the name '$name'")
             }
 
-            PersistentLease(name, version, acquiredAt, renewedAt, timeout, holderName)
+            PostgresqlLease(this, name, version, acquiredAt, renewedAt, timeout, holderName)
         }
     }
 }

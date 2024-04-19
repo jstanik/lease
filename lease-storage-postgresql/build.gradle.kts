@@ -10,7 +10,7 @@ repositories {
 }
 
 dependencies {
-    implementation(project(":api"))
+    implementation(project(":lease-api"))
     implementation(libs.jdbc.driver.postgresql)
 
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")

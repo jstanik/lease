@@ -3,5 +3,5 @@ plugins {
 }
 
 rootProject.name = "lease"
-include("api")
-include("storage-postgresql")
+include("lease-api")
+include("lease-storage-postgresql")
