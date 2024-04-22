@@ -5,7 +5,7 @@ import sk.bakeit.lease.api.LeaseAcquiringFailed
 import sk.bakeit.lease.api.LeaseNotFound
 import sk.bakeit.lease.api.LeaseRepository
 import sk.bakeit.lease.api.StaleLease
-import sk.bakeit.lease.storage.postgresql.jdbc.Transaction
+import sk.bakeit.lease.storage.postgresql.jdbc.TransactionManager
 import java.sql.Connection
 import java.sql.ResultSet
 import java.sql.Timestamp
@@ -21,7 +21,7 @@ import javax.sql.DataSource
  * @param dataSource the datasource providing connection to the postgresql database.
  */
 internal class PostgresqlLeaseRepository(
-    private val dataSource: DataSource,
+    dataSource: DataSource,
 ) : LeaseRepository {
 
     companion object {
@@ -37,8 +37,10 @@ internal class PostgresqlLeaseRepository(
                 " $COLUMN_RENEWED_AT, $COLUMN_TIMEOUT, $COLUMN_HOLDER_NAME, $COLUMN_EXPIRY_DATETIME"
     }
 
+    private val transactionManager = TransactionManager { dataSource.connection }
+
     override fun findLease(leaseName: String): Lease? {
-        return doInTransaction { connection ->
+        return transactionManager.doInTransaction { connection ->
             val statement = connection.prepareStatement(
                 """SELECT $FULL_COLUMN_LIST
                FROM $TABLE_LEASE WHERE $COLUMN_NAME = ?""".trimIndent()
@@ -52,7 +54,7 @@ internal class PostgresqlLeaseRepository(
     }
 
     override fun acquireLease(leaseName: String, owner: String, timeout: Long): Lease {
-        return doInTransaction { connection ->
+        return transactionManager.doInTransaction { connection ->
             val statement = connection.prepareStatement(
                 """INSERT INTO $TABLE_LEASE($FULL_COLUMN_LIST)
                    VALUES(?, 1, ?, ?, ?, ?, ?)
@@ -94,7 +96,7 @@ internal class PostgresqlLeaseRepository(
             )
         }
 
-        return doInTransaction { connection ->
+        return transactionManager.doInTransaction { connection ->
             val statement = connection.prepareStatement(
                 """
                 UPDATE $TABLE_LEASE SET 
@@ -124,7 +126,7 @@ internal class PostgresqlLeaseRepository(
     }
 
     override fun removeLease(lease: Lease) {
-        doInTransaction { connection ->
+        transactionManager.doInTransaction { connection ->
             val statement = connection.prepareStatement("DELETE FROM lease WHERE name = ?")
             statement.use {
                 it.setString(1, lease.name)
@@ -136,21 +138,6 @@ internal class PostgresqlLeaseRepository(
                     throw IllegalStateException("Multiple leases with the name '${lease.name}' deleted.")
                 }
             }
-        }
-    }
-
-    private fun <T> doInTransaction(block: (Connection) -> T): T {
-
-        val transaction = Transaction.getCurrentTransaction { dataSource.connection }
-
-        return try {
-            transaction.beginTransaction()
-            block.invoke(transaction.connection)
-        } catch (ex: Exception) {
-            transaction.setRollbackOnly()
-            throw ex
-        } finally {
-            transaction.endTransaction()
         }
     }
 
